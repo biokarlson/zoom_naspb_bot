@@ -1,0 +1,44 @@
+import asyncio
+import logging
+import os
+
+import aiohttp
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiohttp import web
+
+import config
+from bot.handlers import admin_settings, meetings, request, review, start
+from db import repo
+from services.zoom import ZoomClient
+from web.oauth import create_app
+
+
+async def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    await repo.init_db()
+    bot = Bot(config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    dp = Dispatcher()
+    # admin_settings первым: его фильтры пропускают только админов
+    for r in (start.router, admin_settings.router, request.router, review.router, meetings.router):
+        dp.include_router(r)
+
+    async with aiohttp.ClientSession() as http:
+        zoom = ZoomClient(http)
+        dp["zoom"] = zoom
+
+        runner = web.AppRunner(create_app(bot, zoom))
+        await runner.setup()
+        port = int(os.getenv("PORT", "8080"))
+        await web.TCPSite(runner, "0.0.0.0", port).start()
+
+        try:
+            await dp.start_polling(bot)
+        finally:
+            await runner.cleanup()
+            await bot.session.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
