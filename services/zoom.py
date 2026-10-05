@@ -127,8 +127,9 @@ class ZoomClient:
     async def create_meeting(
         self, topic: str, *, type: int,
         start_local: datetime | None = None, duration_min: int | None = None,
+        use_pmi: bool = True,
     ) -> ZoomMeetingInfo:
-        body: dict = {"topic": topic[:200], "type": type, "settings": {"use_pmi": True}}
+        body: dict = {"topic": topic[:200], "type": type, "settings": {"use_pmi": use_pmi}}
         if type == 2:
             body.update(
                 start_time=start_local.strftime("%Y-%m-%dT%H:%M:%S"),

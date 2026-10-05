@@ -8,7 +8,8 @@ from db import repo
 from db.models import Meeting, Status
 from services.availability import rule_of
 from services.caldav_client import CalendarUnavailable, load_client
-from services.recurrence import build_rrule
+from services.recurrence import calendar_plan
+from services.refs import dump_refs
 from services.series import create_zoom_for
 from services.zoom import ZoomClient, ZoomError, ZoomNotConnected
 
@@ -47,28 +48,35 @@ async def approve(zoom: ZoomClient, meeting_id: int) -> ApprovalResult:
             log.exception("Zoom create failed")
             return ApprovalResult(False, f"Не удалось создать встречу в Zoom: {e}\nСтатус заявки не изменён.")
 
-        # 2) Календарь (при сбое откатываем Zoom)
-        uid = f"{uuid.uuid4()}@zoombot"
+        # 2) Календарь: одно событие на разовую встречу; для серии — по событию на каждую
+        #    выбранную неделю месяца. Любой сбой откатывает уже созданное, включая Zoom.
         rule = rule_of(m)
+        uids: list[str] = []
+        hrefs: list[str] = []
         try:
-            href = await cal.create_event(
-                uid=uid, title=m.title, committee=m.committee, start=m.start_at,
-                duration_min=m.duration_min, join_url=info.join_url,
-                rrule=build_rrule(rule) if rule else None)
+            for ev_start, rrule in calendar_plan(m.start_at, rule):
+                uid = f"{uuid.uuid4()}@zoombot"
+                href = await cal.create_event(
+                    uid=uid, title=m.title, committee=m.committee, start=ev_start,
+                    duration_min=m.duration_min, join_url=info.join_url, rrule=rrule)
+                uids.append(uid)
+                hrefs.append(href)
         except CalendarUnavailable as e:
             log.exception("CalDAV create failed")
-            rollback = await _rollback_zoom(zoom, info.meeting_id)
+            notes = [await _rollback_calendar(cal, h) for h in hrefs]
+            notes.append(await _rollback_zoom(zoom, info.meeting_id))
             return ApprovalResult(
-                False, f"Не удалось создать событие в календаре: {e}\n{rollback}\nСтатус заявки не изменён.")
+                False, f"Не удалось создать событие в календаре: {e}\n" + "\n".join(notes)
+                + "\nСтатус заявки не изменён.")
 
         # 3) Фиксация в БД одним атомарным UPDATE
         async with repo.Session() as s:
             done = await repo.finalize_approval(
                 s, meeting_id, zoom_id=info.meeting_id, join_url=info.join_url,
-                passcode=info.passcode, caldav_uid=uid, caldav_href=href)
+                passcode=info.passcode, caldav_uid=dump_refs(uids), caldav_href=dump_refs(hrefs))
             if not done:  # статус изменился, пока мы создавали встречи — откат всего
-                notes = [await _rollback_zoom(zoom, info.meeting_id),
-                         await _rollback_calendar(cal, href)]
+                notes = [await _rollback_zoom(zoom, info.meeting_id)]
+                notes += [await _rollback_calendar(cal, h) for h in hrefs]
                 return ApprovalResult(False, "Заявка уже обработана\n" + "\n".join(notes),
                                       already_processed=True)
             m = await repo.get_meeting(s, meeting_id)

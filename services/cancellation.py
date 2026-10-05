@@ -8,6 +8,7 @@ from db import repo
 from db.models import Meeting, Status
 from services.availability import occurrences, rule_of
 from services.caldav_client import load_client
+from services.refs import parse_refs
 from services.zoom import ZoomClient
 
 log = logging.getLogger(__name__)
@@ -59,17 +60,22 @@ async def cancel_meeting(zoom: ZoomClient, meeting_id: int) -> CancelResult:
         else:
             done.append("встречи Zoom не было")
 
-        if m.caldav_href:
+        hrefs = parse_refs(m.caldav_href)
+        if hrefs:
             cal = await load_client()
             if cal is None:
-                failed.append("не удалено событие календаря: календарь не подключён")
+                failed.append("не удалены события календаря: календарь не подключён")
             else:
-                try:
-                    await cal.delete_event(m.caldav_href)
-                    done.append("удалено событие календаря")
-                except Exception as e:
-                    log.exception("CalDAV delete failed")
-                    failed.append(f"не удалено событие календаря: {e}")
+                deleted = 0
+                for href in hrefs:
+                    try:
+                        await cal.delete_event(href)
+                        deleted += 1
+                    except Exception as e:
+                        log.exception("CalDAV delete failed")
+                        failed.append(f"не удалено событие календаря: {e}")
+                if deleted:
+                    done.append(f"удалено событий календаря: {deleted}")
 
         if failed:
             return CancelResult(

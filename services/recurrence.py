@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from dateutil.relativedelta import relativedelta
 
@@ -74,3 +74,31 @@ def expand(first_start: datetime, rule: Rule, now: datetime,
                 days.add(d)
         cur += relativedelta(months=1)
     return [datetime.combine(d, t, tzinfo=config.TZ) for d in sorted(days)]
+
+
+def split_rules(rule: Rule) -> list[Rule]:
+    """Правило с несколькими неделями -> по одному правилу на неделю."""
+    return [Rule(rule.weekday, (w,)) for w in rule.weeks]
+
+
+def first_occurrence_on_or_after(d: date, rule: Rule) -> date:
+    for i in range(400):
+        cand = d + timedelta(days=i)
+        if matches(cand, rule):
+            return cand
+    raise ValueError("не найдено занятие по правилу")
+
+
+def calendar_plan(first_start: datetime, rule: Rule | None) -> list[tuple[datetime, str | None]]:
+    """Какие события создать в календаре: [(начало первого занятия, RRULE или None)].
+    Яндекс корректно разворачивает только одну неделю в BYDAY, поэтому серия с несколькими
+    неделями создаётся отдельными событиями — по одному на каждую неделю."""
+    if rule is None:
+        return [(first_start, None)]
+    t = first_start.astimezone(config.TZ)
+    plan = []
+    for sub in split_rules(rule):
+        d = first_occurrence_on_or_after(t.date(), sub)
+        plan.append((datetime.combine(d, t.timetz().replace(tzinfo=None), tzinfo=config.TZ),
+                     build_rrule(sub)))
+    return plan

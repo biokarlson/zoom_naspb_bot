@@ -25,8 +25,10 @@ series_strategy: SeriesStrategy = Type3PmiSeries()
 async def create_zoom_for(zoom: ZoomClient, m: Meeting) -> ZoomMeetingInfo:
     if m.is_recurring:
         return await series_strategy.create(zoom, m)
+    # Разовая встреча — отдельная комната со своим ID и ссылкой (не личная PMI)
     return await zoom.create_meeting(
         m.title, type=2,
         start_local=m.start_at.astimezone(config.TZ),
         duration_min=m.duration_min,
+        use_pmi=False,
     )
