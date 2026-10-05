@@ -19,6 +19,8 @@ class BusyInterval:
     end: datetime
     source: str
     title: str = ""
+    kind: str = "main"   # какая ссылка занята: main (общая) | alt (отдельная)
+    uid: str = ""        # UID события календаря (чтобы не считать события бота дважды)
 
 
 def _to_utc(v) -> datetime:
@@ -46,7 +48,8 @@ def _parse_vevent(comp) -> BusyInterval | None:
         end = start + timedelta(minutes=1)
     if end <= start:
         end = start + timedelta(minutes=1)
-    return BusyInterval(start, end, "calendar", str(comp.get("SUMMARY", "")))
+    return BusyInterval(start, end, "calendar", str(comp.get("SUMMARY", "")),
+                        uid=str(comp.get("UID", "")))
 
 
 class CalDavClient:

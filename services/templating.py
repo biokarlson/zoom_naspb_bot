@@ -9,7 +9,7 @@ from services.recurrence import describe
 
 ALLOWED = {
     "title", "committee", "date", "time", "duration", "join_url", "meeting_id",
-    "passcode", "author", "recurrence", "extra_text",
+    "passcode", "author", "recurrence",
 }
 
 DEFAULT_TEMPLATE = (
@@ -20,8 +20,7 @@ DEFAULT_TEMPLATE = (
     "{recurrence}\n\n"
     "Подключиться к Zoom: {join_url}\n"
     "ID встречи: {meeting_id}\n"
-    "Код доступа: {passcode}\n\n"
-    "{extra_text}"
+    "Код доступа: {passcode}"
 )
 
 _SAMPLE = {k: "x" for k in ALLOWED}
@@ -33,6 +32,9 @@ def validate_template(template: str) -> str | None:
         for _, name, spec, conv in string.Formatter().parse(template):
             if name is None:
                 continue
+            if name == "extra_text":
+                return ("Переменная {extra_text} больше не используется: дополнительный текст "
+                        "отправляется отдельным сообщением после инструкции. Уберите её из шаблона.")
             if name not in ALLOWED:
                 return f"Неизвестная переменная: {{{name}}}"
             if spec or conv:
@@ -49,7 +51,7 @@ def _duration_text(minutes: int) -> str:
     return f"{h} {word}" if minutes % 60 == 0 else f"{minutes} мин"
 
 
-def context_for(m: Meeting, extra_text: str) -> dict[str, str]:
+def context_for(m: Meeting) -> dict[str, str]:
     start = m.start_at.astimezone(config.TZ)
     rule = rule_of(m)
     return {
@@ -63,12 +65,11 @@ def context_for(m: Meeting, extra_text: str) -> dict[str, str]:
         "passcode": m.zoom_passcode or "",
         "author": m.author_name,
         "recurrence": describe(rule) if rule else "",
-        "extra_text": extra_text,
     }
 
 
-def render(template: str, m: Meeting, extra_text: str = "") -> str:
+def render(template: str, m: Meeting) -> str:
     """Если сохранённый шаблон вдруг некорректен — используем шаблон по умолчанию."""
     if validate_template(template) is not None:
         template = DEFAULT_TEMPLATE
-    return template.format_map(context_for(m, extra_text)).strip()
+    return template.format_map(context_for(m)).strip()

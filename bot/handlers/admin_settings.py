@@ -126,13 +126,16 @@ async def _current(key: str, default: str = "") -> str:
 async def tpl_show(cb: CallbackQuery):
     await cb.answer()
     tpl = await _current("template", templating.DEFAULT_TEMPLATE)
+    error = templating.validate_template(tpl)
+    warn = (f"⚠️ Сохранённый шаблон не проходит проверку ({error}), поэтому сейчас используется "
+            "стандартный. Сохраните новый шаблон.\n\n") if error else ""
     variables = ", ".join("{" + v + "}" for v in sorted(templating.ALLOWED))
     b = InlineKeyboardBuilder()
     b.button(text="Изменить", callback_data=Adm(a="tpl_edit"))
     b.button(text="Сбросить на стандартный", callback_data=Adm(a="tpl_reset"))
     b.adjust(2)
     await cb.message.answer(
-        f"Текущий шаблон:\n\n{tpl}\n\nПеременные: {variables}",
+        f"{warn}Текущий шаблон:\n\n{tpl}\n\nПеременные: {variables}",
         reply_markup=b.as_markup(), parse_mode=None)
 
 
@@ -153,9 +156,11 @@ async def tpl_save(message: Message, state: FSMContext):
     async with repo.Session() as s:
         await repo.set_setting(s, "template", text)
     await state.clear()
-    extra = await _current("extra_text")
-    preview = templating.render(text, _sample_meeting(), extra)
-    await message.answer("Шаблон сохранён ✅ Пример:\n\n" + preview, parse_mode=None)
+    preview = templating.render(text, _sample_meeting())
+    await message.answer(
+        "Шаблон сохранён ✅ Пример:\n\n" + preview
+        + "\n\n(Дополнительный текст отправляется отдельным сообщением после инструкции.)",
+        parse_mode=None)
 
 
 @router.callback_query(Adm.filter(F.a == "tpl_reset"))
@@ -177,7 +182,8 @@ async def extra_show(cb: CallbackQuery):
     b.button(text="Очистить", callback_data=Adm(a="extra_clear"))
     b.adjust(2)
     await cb.message.answer(
-        "Дополнительный текст ({extra_text}):\n\n" + (extra or "(пусто)"),
+        "Дополнительный текст (отправляется отдельным сообщением после инструкции):\n\n"
+        + (extra or "(пусто — второе сообщение не отправляется)"),
         reply_markup=b.as_markup(), parse_mode=None)
 
 

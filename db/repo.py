@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import config
@@ -15,6 +15,14 @@ Session = async_sessionmaker(engine, expire_on_commit=False)
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if engine.dialect.name == "sqlite":   # лёгкая миграция: новые колонки в существующей БД
+            rows = (await conn.execute(text("PRAGMA table_info(meetings)"))).fetchall()
+            cols = {r[1] for r in rows}
+            if "link_kind" not in cols:
+                await conn.execute(text("ALTER TABLE meetings ADD COLUMN link_kind VARCHAR(10)"))
+            if "overlap_flag" not in cols:
+                await conn.execute(text(
+                    "ALTER TABLE meetings ADD COLUMN overlap_flag BOOLEAN NOT NULL DEFAULT 0"))
 
 
 async def transition(
@@ -63,7 +71,7 @@ async def set_setting(s: AsyncSession, key: str, value: str) -> None:
 
 async def finalize_approval(
     s: AsyncSession, meeting_id: int, *, zoom_id: str, join_url: str, passcode: str,
-    caldav_uid: str, caldav_href: str,
+    caldav_uid: str, caldav_href: str, link_kind: str = "main",
 ) -> bool:
     """pending -> approved одним UPDATE вместе со всеми внешними ID.
     False => статус уже изменился (например, автор отозвал заявку)."""
@@ -72,7 +80,7 @@ async def finalize_approval(
         .where(Meeting.id == meeting_id, Meeting.status == Status.PENDING)
         .values(status=Status.APPROVED, status_changed_at=datetime.now(timezone.utc),
                 zoom_meeting_id=zoom_id, zoom_join_url=join_url, zoom_passcode=passcode,
-                caldav_uid=caldav_uid, caldav_href=caldav_href)
+                caldav_uid=caldav_uid, caldav_href=caldav_href, link_kind=link_kind)
     )
     await s.commit()
     return res.rowcount == 1

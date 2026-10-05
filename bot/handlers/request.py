@@ -2,6 +2,7 @@ import logging
 from datetime import date, datetime, timezone
 
 from aiogram import Bot, F, Router
+from aiogram.filters import Command
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -12,8 +13,8 @@ from bot import notify, views
 from bot.callbacks import Flow, Menu
 from bot.states import RequestFSM
 from db import repo
-from db.models import Meeting, Status
-from services.availability import find_conflicts
+from db.models import Link, Meeting, Status
+from services.availability import decide_link
 from services.caldav_client import CalendarUnavailable, load_client
 from services.recurrence import Rule, describe, matches
 from services.zoom import ZoomClient
@@ -38,25 +39,34 @@ def _rule(data: dict, start: datetime) -> Rule | None:
 
 # ------------------------------------------------------------------ старт
 
-@router.callback_query(Menu.filter(F.a == "request"))
-async def begin(cb: CallbackQuery, state: FSMContext, zoom: ZoomClient):
-    await cb.answer()
+async def _begin(target: Message, state: FSMContext, zoom: ZoomClient, user_id: int):
     if not await zoom.is_connected():
-        await cb.message.answer("Zoom пока не подключён, обратитесь к админу")
+        await target.answer("Zoom пока не подключён, обратитесь к админу")
         return
     if await load_client() is None:
-        await cb.message.answer("Яндекс Календарь пока не подключён, обратитесь к админу")
+        await target.answer("Яндекс Календарь пока не подключён, обратитесь к админу")
         return
     async with repo.Session() as s:
-        n = await repo.count_pending(s, cb.from_user.id)
+        n = await repo.count_pending(s, user_id)
     if n >= config.MAX_PENDING_PER_USER:
-        await cb.message.answer(
+        await target.answer(
             f"У вас уже {n} заявки на рассмотрении — это максимум. "
             "Дождитесь решения или отмените одну из них в «Управление».")
         return
     await state.clear()
     await state.set_state(RequestFSM.title)
-    await cb.message.answer("Название встречи? (/cancel — отмена)")
+    await target.answer("Название встречи? (/cancel — отмена)")
+
+
+@router.callback_query(Menu.filter(F.a == "request"))
+async def begin(cb: CallbackQuery, state: FSMContext, zoom: ZoomClient):
+    await cb.answer()
+    await _begin(cb.message, state, zoom, cb.from_user.id)
+
+
+@router.message(Command("request"))
+async def cmd_request(message: Message, state: FSMContext, zoom: ZoomClient):
+    await _begin(message, state, zoom, message.from_user.id)
 
 
 @router.message(RequestFSM.title, F.text)
@@ -196,7 +206,7 @@ async def _check_and_confirm(msg: Message, state: FSMContext, user_id: int):
         return
     try:
         async with repo.Session() as s:
-            conflicts = await find_conflicts(s, cal, start, dur_min, rule)
+            decision = await decide_link(s, cal, start, dur_min, rule)
     except CalendarUnavailable:
         log.exception("calendar check failed")
         await state.clear()
@@ -204,19 +214,20 @@ async def _check_and_confirm(msg: Message, state: FSMContext, user_id: int):
         return
 
     await state.set_state(RequestFSM.confirm)
-    if conflicts:
-        lines = ["⚠️ Это время занято:"]
-        for when, iv in conflicts[:5]:
+    if decision.kind is None:
+        lines = ["⛔ В это время уже идут две встречи (по общей и по отдельной ссылке), "
+                 "третью создать нельзя:"]
+        for when, iv in decision.conflicts[:5]:
             kind = "встреча, созданная ботом" if iv.source == "bot" else "событие в календаре"
             lines.append(f"• {when:%d.%m.%Y %H:%M} — {kind}")
-        if len(conflicts) > 5:
-            lines.append(f"…и ещё {len(conflicts) - 5}")
-        if rule:
-            lines.append("Для серии отклоняется вся серия целиком.")
+        if len(decision.conflicts) > 5:
+            lines.append(f"…и ещё {len(decision.conflicts) - 5}")
         lines.append("\nВыберите другую дату или свяжитесь с админом.")
         await msg.answer("\n".join(lines), reply_markup=kb.conflict_kb())
         return
 
+    overlap = decision.kind == Link.ALT
+    await state.update_data(overlap=overlap)
     summary = [
         "📝 Проверьте заявку:",
         f"Название: {views.esc(data['title'])}",
@@ -225,7 +236,13 @@ async def _check_and_confirm(msg: Message, state: FSMContext, user_id: int):
         f"Продолжительность: {views.dur_text(dur_min)}",
         f"Повтор: {describe(rule) if rule else 'нет'}",
     ]
-    await msg.answer("\n".join(summary), reply_markup=kb.confirm_kb())
+    if overlap:
+        what = "для всей серии" if rule else "для вашей встречи"
+        summary.append(
+            f"\n⚠️ Время пересекается с другой встречей, поэтому {what} будет создана "
+            "отдельная ссылка — она не совпадёт с общей.")
+    await msg.answer("\n".join(summary),
+                     reply_markup=kb.overlap_kb() if overlap else kb.confirm_kb())
 
 
 # ------------------------------------------------------------------ конфликт / подтверждение
@@ -280,6 +297,7 @@ async def on_confirm(cb: CallbackQuery, callback_data: Flow, state: FSMContext, 
             weekday=rule.weekday if rule else None,
             weeks_of_month=list(rule.weeks) if rule else None,
             status=Status.PENDING, admin_msgs=[],
+            overlap_flag=bool(data.get("overlap", False)),
         )
         s.add(m)
         await s.commit()

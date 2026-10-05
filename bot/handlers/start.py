@@ -17,7 +17,23 @@ MENU_TEXT = "Выберите действие:"
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
+    # постоянная кнопка «Главное меню» внизу экрана + inline-меню
+    await message.answer("Кнопка «🏠 Главное меню» всегда внизу экрана 👇",
+                         reply_markup=kb.main_reply_kb())
     await message.answer(MENU_TEXT, reply_markup=kb.main_menu())
+
+
+@router.message(F.text == kb.MENU_BUTTON_TEXT)
+async def menu_button(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(MENU_TEXT, reply_markup=kb.main_menu())
+
+
+@router.message(Command("my"))
+async def cmd_my(message: Message, state: FSMContext):
+    await state.clear()
+    text, markup = await views.build_list("mine", 0, message.from_user.id)
+    await message.answer(text, reply_markup=markup)
 
 
 @router.message(Command("cancel"))

@@ -1,8 +1,29 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
+                           ReplyKeyboardMarkup)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.callbacks import Adm, Card, Flow, Menu, Pg, Rev
 from db.models import Meeting, Status
+
+
+MENU_BUTTON_TEXT = "🏠 Главное меню"
+
+
+def main_reply_kb() -> ReplyKeyboardMarkup:
+    """Постоянная кнопка внизу экрана."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=MENU_BUTTON_TEXT)]],
+        resize_keyboard=True, is_persistent=True)
+
+
+def overlap_kb() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="✅ Отправить заявку", callback_data=Flow(step="confirm", v="send"))
+    b.button(text="Выбрать другую дату", callback_data=Flow(step="conflict", v="date"))
+    b.button(text="Связаться с админом", callback_data=Flow(step="conflict", v="admin"))
+    b.button(text="Отмена", callback_data=Flow(step="confirm", v="cancel"))
+    b.adjust(1)
+    return b.as_markup()
 
 
 def main_menu() -> InlineKeyboardMarkup:

@@ -9,9 +9,9 @@ import config
 from bot import notify, views
 from bot.callbacks import Rev
 from db import repo
-from db.models import Meeting, Status
+from db.models import Link, Meeting, Status
 from services import approval
-from services.availability import find_conflicts, rule_of
+from services.availability import decide_link, rule_of
 from services.caldav_client import CalendarUnavailable, load_client
 from services.zoom import ZoomClient
 
@@ -57,7 +57,8 @@ async def on_approve(cb: CallbackQuery, callback_data: Rev, bot: Bot, zoom: Zoom
         return
 
     m = res.meeting
-    await _finish(bot, cb, m, "✅ Одобрено")
+    suffix = "✅ Одобрено" + (" · отдельная ссылка (пересечение)" if m.link_kind == Link.ALT else "")
+    await _finish(bot, cb, m, suffix)
     if not await notify.send_instruction(bot, m):
         await cb.message.answer("⚠️ Встреча создана, но сообщение автору доставить не удалось.")
 
@@ -97,18 +98,26 @@ async def on_check(cb: CallbackQuery, callback_data: Rev):
         return
     try:
         async with repo.Session() as s:
-            conflicts = await find_conflicts(
+            decision = await decide_link(
                 s, cal, m.start_at, m.duration_min, rule_of(m), exclude_id=m.id)
     except CalendarUnavailable as e:
         await cb.message.answer(f"Не удалось проверить: календарь недоступен ({views.esc(e)})")
         return
-    if not conflicts:
-        await cb.message.answer(f"🔍 «{views.esc(m.title)}»: время свободно ✅")
+    title = views.esc(m.title)
+    if not decision.conflicts:
+        await cb.message.answer(f"🔍 «{title}»: время свободно ✅ Будет общая ссылка.")
         return
-    lines = [f"🔍 «{views.esc(m.title)}»: найдены конфликты ⚠️"]
-    for when, iv in conflicts[:10]:
+    if decision.kind == Link.MAIN:
+        head = f"🔍 «{title}»: есть пересечение, но общая ссылка свободна ✅ Будет общая ссылка."
+    elif decision.kind == Link.ALT:
+        head = f"🔍 «{title}»: пересечение ⚠️ Будет создана отдельная ссылка."
+    else:
+        head = f"🔍 «{title}»: ⛔ заняты и общая, и отдельная ссылка. Одобрить нельзя."
+    lines = [head]
+    for when, iv in decision.conflicts[:10]:
         kind = "встреча бота" if iv.source == "bot" else "календарь"
-        lines.append(f"• {when:%d.%m.%Y %H:%M} — {kind}: {views.esc(iv.title)}")
-    if len(conflicts) > 10:
-        lines.append(f"…и ещё {len(conflicts) - 10}")
+        link = " (отдельная ссылка)" if iv.kind == Link.ALT else ""
+        lines.append(f"• {when:%d.%m.%Y %H:%M} — {kind}: {views.esc(iv.title)}{link}")
+    if len(decision.conflicts) > 10:
+        lines.append(f"…и ещё {len(decision.conflicts) - 10}")
     await cb.message.answer("\n".join(lines))

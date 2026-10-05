@@ -47,6 +47,12 @@ class Status:
     ACTIVE = (PENDING, APPROVED, CANCEL_REQUESTED)
 
 
+class Link:
+    """Какая ссылка Zoom у встречи: общая (PMI) или отдельная комната."""
+    MAIN = "main"
+    ALT = "alt"
+
+
 class Meeting(Base):
     __tablename__ = "meetings"
 
@@ -69,6 +75,8 @@ class Meeting(Base):
     caldav_uid: Mapped[str | None] = mapped_column(String(200), nullable=True)
     caldav_href: Mapped[str | None] = mapped_column(Text, nullable=True)
     admin_msgs: Mapped[list] = mapped_column(JSON, default=list)
+    link_kind: Mapped[str | None] = mapped_column(String(10), nullable=True)  # main | alt; NULL у старых = main
+    overlap_flag: Mapped[bool] = mapped_column(default=False)  # на момент заявки время пересекалось
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime, default=lambda: datetime.now(timezone.utc))
 

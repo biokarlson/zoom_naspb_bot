@@ -8,10 +8,13 @@ import config
 from bot import keyboards as kb
 from bot import views
 from db import repo
-from db.models import Meeting
+from db.models import Link, Meeting
 from services import templating
 
 log = logging.getLogger(__name__)
+
+ALT_NOTE = ("⚠️ Время вашей встречи пересекалось с другой встречей, поэтому для неё создана "
+            "отдельная комната. Эта ссылка отличается от общей — используйте именно её.")
 
 
 def _now() -> datetime:
@@ -76,10 +79,21 @@ async def notify_admins(bot: Bot, text: str) -> None:
 async def render_instruction(m: Meeting) -> str:
     async with repo.Session() as s:
         tpl = await repo.get_setting(s, "template") or templating.DEFAULT_TEMPLATE
-        extra = await repo.get_setting(s, "extra_text")
-    return templating.render(tpl, m, extra)
+    text = templating.render(tpl, m)
+    if m.link_kind == Link.ALT:
+        text = ALT_NOTE + "\n\n" + text
+    return text
 
 
 async def send_instruction(bot: Bot, m: Meeting) -> bool:
+    """Инструкция автору + (если задан) дополнительный текст отдельным сообщением.
+    Возвращает успех отправки инструкции."""
     text = await render_instruction(m)
-    return await notify_author(bot, m.author_tg_id, text, plain=True)
+    ok = await notify_author(bot, m.author_tg_id, text, plain=True)
+    if not ok:
+        return False
+    async with repo.Session() as s:
+        extra = (await repo.get_setting(s, "extra_text")).strip()
+    if extra:
+        await notify_author(bot, m.author_tg_id, extra, plain=True)
+    return True

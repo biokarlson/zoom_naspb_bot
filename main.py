@@ -6,6 +6,7 @@ import aiohttp
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand
 from aiohttp import web
 
 import config
@@ -20,6 +21,15 @@ async def main() -> None:
     await repo.init_db()
     bot = Bot(config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
+    try:  # меню команд (кнопка слева от поля ввода)
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Главное меню"),
+            BotCommand(command="request", description="Подать заявку"),
+            BotCommand(command="my", description="Мои встречи"),
+            BotCommand(command="cancel", description="Отменить действие"),
+        ])
+    except Exception:
+        logging.getLogger(__name__).exception("Не удалось задать меню команд")
     # admin_settings первым: его фильтры пропускают только админов
     for r in (start.router, admin_settings.router, request.router, review.router, meetings.router):
         dp.include_router(r)
