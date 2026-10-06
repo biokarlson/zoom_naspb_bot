@@ -14,7 +14,7 @@ from bot.callbacks import Adm
 from bot.filters import AdminFilter
 from bot.states import AdminFSM
 from db import repo
-from services import crypto, templating
+from services import crypto, links, templating
 from services.caldav_client import CalDavClient, CalendarUnavailable
 from services.zoom import ZoomClient
 from web.oauth import authorize_url, new_state
@@ -267,6 +267,7 @@ async def link_save(message: Message, state: FSMContext):
         return
     async with repo.Session() as s:
         await repo.set_setting(s, LINK_KEYS[var], url)
+    await links.refresh_cache()
     await state.clear()
     await message.answer(f"Ссылка для {{{var}}} сохранена ✅", parse_mode=None)
 
@@ -279,6 +280,7 @@ async def link_clear(cb: CallbackQuery, callback_data: Adm):
     await cb.answer()
     async with repo.Session() as s:
         await repo.set_setting(s, LINK_KEYS[callback_data.v], "")
+    await links.refresh_cache()
     await cb.message.answer(
         f"Ссылка для {{{callback_data.v}}} очищена. Если не задана ни одна ссылка, "
         "подставляется ссылка из Zoom.", parse_mode=None)

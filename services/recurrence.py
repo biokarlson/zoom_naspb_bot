@@ -89,16 +89,34 @@ def first_occurrence_on_or_after(d: date, rule: Rule) -> date:
     raise ValueError("не найдено занятие по правилу")
 
 
+def _first_fifth(d: date, weekday: int) -> date:
+    """Первая дата не раньше d, которая является 5-м вхождением дня недели в месяце."""
+    for i in range(800):
+        cand = d + timedelta(days=i)
+        if cand.weekday() == weekday and (cand.day - 1) // 7 + 1 == 5:
+            return cand
+    raise ValueError("не найдено 5-е вхождение дня недели")
+
+
 def calendar_plan(first_start: datetime, rule: Rule | None) -> list[tuple[datetime, str | None]]:
     """Какие события создать в календаре: [(начало первого занятия, RRULE или None)].
     Яндекс корректно разворачивает только одну неделю в BYDAY, поэтому серия с несколькими
-    неделями создаётся отдельными событиями — по одному на каждую неделю."""
+    неделями создаётся отдельными событиями — по одному на каждую неделю.
+    Если выбраны и 4-я, и последняя неделя, «последняя» заменяется на «5-ю» (BYDAY=5xx):
+    в месяцах с четырьмя днями недели занятие одно (4-е), с пятью — два (4-е и 5-е),
+    и дублей в календаре не бывает."""
     if rule is None:
         return [(first_start, None)]
     t = first_start.astimezone(config.TZ)
+    tm = t.timetz().replace(tzinfo=None)
     plan = []
-    for sub in split_rules(rule):
-        d = first_occurrence_on_or_after(t.date(), sub)
-        plan.append((datetime.combine(d, t.timetz().replace(tzinfo=None), tzinfo=config.TZ),
-                     build_rrule(sub)))
+    for w in rule.weeks:
+        if w == LAST and 4 in rule.weeks:
+            d = _first_fifth(t.date(), rule.weekday)
+            rrule = f"RRULE:FREQ=MONTHLY;BYDAY=5{_BYDAY[rule.weekday]}"
+        else:
+            sub = Rule(rule.weekday, (w,))
+            d = first_occurrence_on_or_after(t.date(), sub)
+            rrule = build_rrule(sub)
+        plan.append((datetime.combine(d, tm, tzinfo=config.TZ), rrule))
     return plan

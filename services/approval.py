@@ -9,9 +9,11 @@ from db import repo
 from db.models import Link, Meeting, Status
 from services.availability import decide_link, rule_of
 from services.caldav_client import CalendarUnavailable, load_client
+from services.links import load_custom
 from services.recurrence import calendar_plan
 from services.refs import dump_refs
 from services.series import create_zoom_for
+from services.templating import effective_link
 from services.zoom import ZoomClient, ZoomError, ZoomNotConnected
 
 log = logging.getLogger(__name__)
@@ -75,6 +77,10 @@ async def _approve(zoom: ZoomClient, meeting_id: int) -> ApprovalResult:
         log.exception("Zoom create failed")
         return ApprovalResult(False, f"Не удалось создать встречу в Zoom: {e}\nСтатус заявки не изменён.")
 
+    # Ссылка в календарном событии — та же, что получит автор в сообщении
+    custom_join, custom_short = await load_custom()
+    event_link = effective_link(kind, info.join_url, custom_join, custom_short)
+
     # 2) Календарь: одно событие на разовую встречу; для серии — по событию на каждую
     #    выбранную неделю месяца. Любой сбой откатывает уже созданное, включая Zoom.
     uids: list[str] = []
@@ -84,7 +90,7 @@ async def _approve(zoom: ZoomClient, meeting_id: int) -> ApprovalResult:
             uid = f"{uuid.uuid4()}@zoombot"
             href = await cal.create_event(
                 uid=uid, title=m.title, committee=m.committee, start=ev_start,
-                duration_min=m.duration_min, join_url=info.join_url, rrule=rrule)
+                duration_min=m.duration_min, join_url=event_link, rrule=rrule)
             uids.append(uid)
             hrefs.append(href)
     except CalendarUnavailable as e:

@@ -55,19 +55,29 @@ def _duration_text(minutes: int) -> str:
     return f"{h} {word}" if minutes % 60 == 0 else f"{minutes} мин"
 
 
+def resolve_links(link_kind: str | None, api_url: str, custom_join_url: str = "",
+                  custom_short_url: str = "") -> tuple[str, str]:
+    """(join_url, join_short_url). Ссылка из Zoom API берётся, только если встреча в отдельной
+    комнате либо админ не задал ни {join_url}, ни {join_short_url}. Если задана хотя бы одна —
+    подставляются только заданные, незаданная остаётся пустой."""
+    custom_join, custom_short = custom_join_url.strip(), custom_short_url.strip()
+    if link_kind != Link.ALT and (custom_join or custom_short):
+        return custom_join, custom_short
+    return api_url, api_url
+
+
+def effective_link(link_kind: str | None, api_url: str, custom_join_url: str = "",
+                   custom_short_url: str = "") -> str:
+    """Единая ссылка встречи для календаря, карточек и списков: {join_url}, а если он пуст — {join_short_url}."""
+    join_url, short_url = resolve_links(link_kind, api_url, custom_join_url, custom_short_url)
+    return join_url or short_url
+
+
 def context_for(m: Meeting, custom_join_url: str = "", custom_short_url: str = "") -> dict[str, str]:
     start = m.start_at.astimezone(config.TZ)
     rule = rule_of(m)
-    # Ссылка из Zoom API берётся, только если встреча в отдельной комнате либо админ не задал
-    # ни {join_url}, ни {join_short_url}. Если задана хотя бы одна — подставляются только
-    # заданные, незаданная остаётся пустой.
-    api_url = m.zoom_join_url or ""
-    on_main = getattr(m, "link_kind", None) != Link.ALT
-    custom_join, custom_short = custom_join_url.strip(), custom_short_url.strip()
-    if on_main and (custom_join or custom_short):
-        join_url, short_url = custom_join, custom_short
-    else:
-        join_url = short_url = api_url
+    join_url, short_url = resolve_links(
+        getattr(m, "link_kind", None), m.zoom_join_url or "", custom_join_url, custom_short_url)
     return {
         "title": m.title,
         "committee": m.committee,

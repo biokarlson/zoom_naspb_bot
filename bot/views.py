@@ -11,6 +11,7 @@ from bot.callbacks import Card, Menu, Pg
 from db import repo
 from db.models import Link, Meeting, Status
 from services.availability import rule_of
+from services.links import display_link
 from services.recurrence import describe, expand
 
 
@@ -63,7 +64,7 @@ def card_text(m: Meeting, now: datetime, *, admin: bool, head: str = "", suffix:
         lines.append(f"Дата и время: {dt_text(nxt)} МСК")
     lines.append(f"Продолжительность: {dur_text(m.duration_min)}")
     if m.zoom_join_url and m.status in Status.BUSY:
-        lines.append(f"Zoom: {esc(m.zoom_join_url)}")
+        lines.append(f"Zoom: {esc(display_link(m))}")
         if m.link_kind == Link.ALT:
             lines.append("Ссылка: отдельная (не общая)")
     if m.status == Status.PENDING and m.overlap_flag:
@@ -81,7 +82,7 @@ def _row_user(i: int, m: Meeting, nxt: datetime) -> str:
     if rule:
         lines.append(f"   🔁 {describe(rule)}")
     if m.zoom_join_url and m.status in Status.BUSY:
-        lines.append(f"   Zoom: {esc(m.zoom_join_url)}"
+        lines.append(f"   Zoom: {esc(display_link(m))}"
                      + (" (отдельная ссылка)" if m.link_kind == Link.ALT else ""))
     return "\n".join(lines)
 

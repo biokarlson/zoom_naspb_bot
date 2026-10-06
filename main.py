@@ -12,6 +12,7 @@ from aiohttp import web
 import config
 from bot.handlers import admin_settings, meetings, request, review, start
 from db import repo
+from services import links
 from services.zoom import ZoomClient
 from web.oauth import create_app
 
@@ -19,6 +20,7 @@ from web.oauth import create_app
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     await repo.init_db()
+    await links.refresh_cache()
     bot = Bot(config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     try:  # меню команд (кнопка слева от поля ввода)
