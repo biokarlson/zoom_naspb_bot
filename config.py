@@ -2,6 +2,8 @@ import os
 from zoneinfo import ZoneInfo
 
 # --- Константы (не секреты) ---
+VERSION = "1.1"
+
 ADMIN_IDS: list[int] = [123456789]          # впишите Telegram ID админов
 TZ = ZoneInfo("Europe/Moscow")
 HORIZON_MONTHS = 6                          # горизонт проверки занятости серий

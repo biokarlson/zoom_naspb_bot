@@ -205,3 +205,26 @@ async def _list_calendars(self: "CalDavClient") -> list[tuple[str, str]]:
 
 
 CalDavClient.list_calendars = _list_calendars
+
+
+def _instances_sync(self: "CalDavClient", uids: set[str], start: datetime, end: datetime) -> list[datetime]:
+    _, cal = self._calendar()
+    events = cal.search(start=start, end=end, event=True, expand=True)
+    out: list[datetime] = []
+    for ev in events:
+        for comp in ev.icalendar_instance.walk("VEVENT"):
+            if str(comp.get("UID", "")) in uids:
+                out.append(_to_utc(comp.decoded("DTSTART")))
+    return out
+
+
+async def _fetch_instances(self: "CalDavClient", uids: set[str], start: datetime,
+                           end: datetime) -> list[datetime]:
+    """Начала всех занятий событий с данными UID в окне [start, end], как их развернул сервер."""
+    try:
+        return await asyncio.to_thread(_instances_sync, self, uids, start, end)
+    except Exception as e:
+        raise CalendarUnavailable(str(e)) from e
+
+
+CalDavClient.fetch_instances = _fetch_instances

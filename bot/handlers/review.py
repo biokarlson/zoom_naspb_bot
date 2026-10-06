@@ -59,6 +59,8 @@ async def on_approve(cb: CallbackQuery, callback_data: Rev, bot: Bot, zoom: Zoom
     m = res.meeting
     suffix = "✅ Одобрено" + (" · отдельная ссылка (пересечение)" if m.link_kind == Link.ALT else "")
     await _finish(bot, cb, m, suffix)
+    if res.note:
+        await cb.message.answer(f"⚠️ {views.esc(res.note)}")
     if not await notify.send_instruction(bot, m):
         await cb.message.answer("⚠️ Встреча создана, но сообщение автору доставить не удалось.")
 

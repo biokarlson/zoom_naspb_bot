@@ -14,6 +14,7 @@ from services.recurrence import calendar_plan
 from services.refs import dump_refs
 from services.series import create_zoom_for
 from services.templating import effective_link
+from services.verification import verify_series
 from services.zoom import ZoomClient, ZoomError, ZoomNotConnected
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ class ApprovalResult:
     already_processed: bool = False
     meeting: Meeting | None = None
     link_kind: str | None = None
+    note: str = ""               # предупреждение админу при успехе
 
 
 async def approve(zoom: ZoomClient, meeting_id: int) -> ApprovalResult:
@@ -101,6 +103,17 @@ async def _approve(zoom: ZoomClient, meeting_id: int) -> ApprovalResult:
             False, f"Не удалось создать событие в календаре: {e}\n" + "\n".join(notes)
             + "\nСтатус заявки не изменён.")
 
+    # 2б) Серия: сверяем с тем, как Яндекс развернул правила (дубли, пропуски)
+    note = ""
+    if rule is not None:
+        vr = await verify_series(cal, uids, m.start_at, rule)
+        if vr.error:
+            notes = [await _rollback_calendar(cal, h) for h in hrefs]
+            notes.append(await _rollback_zoom(zoom, info.meeting_id))
+            return ApprovalResult(False, vr.error + "\n" + "\n".join(notes)
+                                  + "\nСтатус заявки не изменён.")
+        note = vr.warning or ""
+
     # 3) Фиксация в БД одним атомарным UPDATE
     async with repo.Session() as s:
         done = await repo.finalize_approval(
@@ -113,7 +126,7 @@ async def _approve(zoom: ZoomClient, meeting_id: int) -> ApprovalResult:
             return ApprovalResult(False, "Заявка уже обработана\n" + "\n".join(notes),
                                   already_processed=True)
         m = await repo.get_meeting(s, meeting_id)
-    return ApprovalResult(True, "Одобрено", meeting=m, link_kind=kind)
+    return ApprovalResult(True, "Одобрено", meeting=m, link_kind=kind, note=note)
 
 
 async def _rollback_zoom(zoom: ZoomClient, zoom_id: str) -> str:

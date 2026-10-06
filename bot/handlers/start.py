@@ -57,7 +57,7 @@ async def manage(cb: CallbackQuery, state: FSMContext, zoom: ZoomClient):
         zoom_ok = await zoom.is_connected()
         cal_ok = await load_client() is not None
         text = (
-            "<b>Управление</b>\n\n"
+            f"<b>Управление</b> · версия {config.VERSION}\n\n"
             f"Zoom: {'✅ подключён' if zoom_ok else '❌ не подключён'}\n"
             f"Яндекс Календарь: {'✅ подключён' if cal_ok else '❌ не подключён'}"
         )
