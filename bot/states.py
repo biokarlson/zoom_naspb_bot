@@ -18,3 +18,4 @@ class AdminFSM(StatesGroup):
     caldav_pick = State()
     template = State()
     extra = State()
+    link_value = State()

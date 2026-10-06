@@ -40,8 +40,9 @@ def admin_menu() -> InlineKeyboardMarkup:
     b.button(text="Подключить календарь", callback_data=Adm(a="caldav"))
     b.button(text="Шаблон сообщения", callback_data=Adm(a="template"))
     b.button(text="Дополнительный текст", callback_data=Adm(a="extra"))
+    b.button(text="Ссылки в инструкции", callback_data=Adm(a="links"))
     b.button(text="📋 Все встречи", callback_data=Pg(scope="all", n=0))
-    b.adjust(2, 2, 1)
+    b.adjust(2, 2, 2)
     return b.as_markup()
 
 

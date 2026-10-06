@@ -156,7 +156,9 @@ async def tpl_save(message: Message, state: FSMContext):
     async with repo.Session() as s:
         await repo.set_setting(s, "template", text)
     await state.clear()
-    preview = templating.render(text, _sample_meeting())
+    preview = templating.render(
+        text, _sample_meeting(),
+        await _current(templating.CUSTOM_JOIN_KEY), await _current(templating.CUSTOM_SHORT_KEY))
     await message.answer(
         "Шаблон сохранён ✅ Пример:\n\n" + preview
         + "\n\n(Дополнительный текст отправляется отдельным сообщением после инструкции.)",
@@ -208,3 +210,75 @@ async def extra_clear(cb: CallbackQuery):
     async with repo.Session() as s:
         await repo.set_setting(s, "extra_text", "")
     await cb.message.answer("Дополнительный текст очищен.")
+
+
+# ------------------------------------------------------------------ ссылки для {join_url} / {join_short_url}
+
+LINK_KEYS = {"join_url": templating.CUSTOM_JOIN_KEY, "join_short_url": templating.CUSTOM_SHORT_KEY}
+
+
+@router.callback_query(Adm.filter(F.a == "links"))
+async def links_show(cb: CallbackQuery):
+    await cb.answer()
+    join = await _current(templating.CUSTOM_JOIN_KEY)
+    short = await _current(templating.CUSTOM_SHORT_KEY)
+    none = "не задана"
+    text = (
+        "Ссылки в инструкции автору:\n\n"
+        f"{{join_url}}: {join or none}\n"
+        f"{{join_short_url}}: {short or none}\n\n"
+        "Если задана хотя бы одна из ссылок, в инструкцию подставляются только заданные "
+        "(незаданная остаётся пустой). Ссылка из Zoom берётся, если не задана ни одна "
+        "или для встречи создана отдельная комната.")
+    b = InlineKeyboardBuilder()
+    b.button(text="Изменить {join_url}", callback_data=Adm(a="link_edit", v="join_url"))
+    b.button(text="Изменить {join_short_url}", callback_data=Adm(a="link_edit", v="join_short_url"))
+    b.button(text="Очистить {join_url}", callback_data=Adm(a="link_clear", v="join_url"))
+    b.button(text="Очистить {join_short_url}", callback_data=Adm(a="link_clear", v="join_short_url"))
+    b.adjust(2)
+    await cb.message.answer(text, reply_markup=b.as_markup(), parse_mode=None)
+
+
+@router.callback_query(Adm.filter(F.a == "link_edit"))
+async def link_edit(cb: CallbackQuery, callback_data: Adm, state: FSMContext):
+    if callback_data.v not in LINK_KEYS:
+        await cb.answer("Неизвестная переменная", show_alert=True)
+        return
+    await cb.answer()
+    await state.set_state(AdminFSM.link_value)
+    await state.update_data(link_key=callback_data.v)
+    await cb.message.answer(
+        f"Пришлите ссылку для {{{callback_data.v}}} (начинается с https://). /cancel — отмена.",
+        parse_mode=None)
+
+
+@router.message(AdminFSM.link_value, F.text)
+async def link_save(message: Message, state: FSMContext):
+    url = message.text.strip()
+    if not url.startswith("https://") or len(url) > 500 or any(ch.isspace() for ch in url):
+        await message.answer(
+            "Нужна ссылка вида https://... без пробелов (до 500 символов). "
+            "Пришлите снова или /cancel.", parse_mode=None)
+        return
+    var = (await state.get_data()).get("link_key")
+    if var not in LINK_KEYS:
+        await state.clear()
+        await message.answer("Что-то пошло не так, начните заново.")
+        return
+    async with repo.Session() as s:
+        await repo.set_setting(s, LINK_KEYS[var], url)
+    await state.clear()
+    await message.answer(f"Ссылка для {{{var}}} сохранена ✅", parse_mode=None)
+
+
+@router.callback_query(Adm.filter(F.a == "link_clear"))
+async def link_clear(cb: CallbackQuery, callback_data: Adm):
+    if callback_data.v not in LINK_KEYS:
+        await cb.answer("Неизвестная переменная", show_alert=True)
+        return
+    await cb.answer()
+    async with repo.Session() as s:
+        await repo.set_setting(s, LINK_KEYS[callback_data.v], "")
+    await cb.message.answer(
+        f"Ссылка для {{{callback_data.v}}} очищена. Если не задана ни одна ссылка, "
+        "подставляется ссылка из Zoom.", parse_mode=None)

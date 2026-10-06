@@ -79,7 +79,9 @@ async def notify_admins(bot: Bot, text: str) -> None:
 async def render_instruction(m: Meeting) -> str:
     async with repo.Session() as s:
         tpl = await repo.get_setting(s, "template") or templating.DEFAULT_TEMPLATE
-    text = templating.render(tpl, m)
+        custom_join = await repo.get_setting(s, templating.CUSTOM_JOIN_KEY)
+        custom_short = await repo.get_setting(s, templating.CUSTOM_SHORT_KEY)
+    text = templating.render(tpl, m, custom_join, custom_short)
     if m.link_kind == Link.ALT:
         text = ALT_NOTE + "\n\n" + text
     return text
