@@ -2,7 +2,7 @@ import os
 from zoneinfo import ZoneInfo
 
 # --- Константы (не секреты) ---
-VERSION = "1.1"
+VERSION = "1.3"
 
 def _parse_ids(raw: str) -> list[int]:
     ids: list[int] = []

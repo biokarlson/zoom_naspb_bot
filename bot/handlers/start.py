@@ -18,7 +18,7 @@ MENU_TEXT = "Выберите действие:"
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     # постоянная кнопка «Главное меню» внизу экрана + inline-меню
-    await message.answer("Кнопка «🏠 Главное меню» всегда внизу экрана 👇",
+    await message.answer("Кнопка «🏠 Главное меню» внизу экрана 👇 (её можно свернуть значком клавиатуры)",
                          reply_markup=kb.main_reply_kb())
     await message.answer(MENU_TEXT, reply_markup=kb.main_menu())
 

@@ -10,10 +10,10 @@ MENU_BUTTON_TEXT = "🏠 Главное меню"
 
 
 def main_reply_kb() -> ReplyKeyboardMarkup:
-    """Постоянная кнопка внизу экрана."""
+    """Кнопка внизу экрана. Не «постоянная»: клавиатуру можно свернуть, и «Назад» работает как обычно."""
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=MENU_BUTTON_TEXT)]],
-        resize_keyboard=True, is_persistent=True)
+        resize_keyboard=True)
 
 
 def overlap_kb() -> InlineKeyboardMarkup:
