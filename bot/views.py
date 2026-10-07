@@ -12,7 +12,7 @@ from db import repo
 from db.models import Link, Meeting, Status
 from services.availability import rule_of
 from services.links import display_link
-from services.recurrence import describe, expand
+from services.recurrence import OVERLAP_WEEKS_NOTE, describe, expand, has_overlapping_weeks
 
 
 def esc(x) -> str:
@@ -60,6 +60,8 @@ def card_text(m: Meeting, now: datetime, *, admin: bool, head: str = "", suffix:
     if rule:
         lines.append(f"Ближайшее занятие: {dt_text(nxt)} МСК")
         lines.append(f"Повтор: {describe(rule)}")
+        if admin and has_overlapping_weeks(rule):
+            lines.append("ℹ️ " + OVERLAP_WEEKS_NOTE)
     else:
         lines.append(f"Дата и время: {dt_text(nxt)} МСК")
     lines.append(f"Продолжительность: {dur_text(m.duration_min)}")

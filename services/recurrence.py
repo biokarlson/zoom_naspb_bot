@@ -89,29 +89,27 @@ def first_occurrence_on_or_after(d: date, rule: Rule) -> date:
     raise ValueError("не найдено занятие по правилу")
 
 
+def has_overlapping_weeks(rule: Rule) -> bool:
+    """4-я и последняя неделя в некоторых месяцах — один и тот же день недели."""
+    return 4 in rule.weeks and LAST in rule.weeks
+
+
+OVERLAP_WEEKS_NOTE = ("В месяцах, где 4-я и последняя неделя совпадают, в Яндекс Календаре будут "
+                      "два одинаковых события (в Zoom и в расписании бота дубля нет).")
+
+
 def calendar_plan(first_start: datetime, rule: Rule | None) -> list[tuple[datetime, str | None]]:
     """Какие события создать в календаре: [(начало первого занятия, RRULE или None)].
     Яндекс корректно разворачивает только одну неделю в BYDAY, поэтому серия с несколькими
-    неделями создаётся отдельными событиями — по одному на каждую неделю.
-    Пара «4-я + последняя» объединяется в одно событие: день недели на числах 22–31
-    (BYDAY=xx;BYMONTHDAY=22..31) — это 4-е вхождение всегда плюс 5-е, когда оно есть.
-    Так в месяцах, где 4-я и последняя совпадают, дубля нет."""
+    неделями создаётся отдельными событиями — по одному на каждую выбранную неделю.
+    Известное ограничение: для пары «4-я + последняя» в месяцах, где они совпадают,
+    в календаре два одинаковых события (BYMONTHDAY и BYDAY=5xx Яндекс разворачивает неверно)."""
     if rule is None:
         return [(first_start, None)]
     t = first_start.astimezone(config.TZ)
     tm = t.timetz().replace(tzinfo=None)
-    combined = 4 in rule.weeks and LAST in rule.weeks
     plan = []
-    for w in rule.weeks:
-        if combined and w in (4, LAST):
-            continue
-        sub = Rule(rule.weekday, (w,))
+    for sub in split_rules(rule):
         d = first_occurrence_on_or_after(t.date(), sub)
         plan.append((datetime.combine(d, tm, tzinfo=config.TZ), build_rrule(sub)))
-    if combined:
-        d = first_occurrence_on_or_after(t.date(), Rule(rule.weekday, (4, LAST)))
-        days = ",".join(str(n) for n in range(22, 32))
-        rrule = f"RRULE:FREQ=MONTHLY;BYDAY={_BYDAY[rule.weekday]};BYMONTHDAY={days}"
-        plan.append((datetime.combine(d, tm, tzinfo=config.TZ), rrule))
-    plan.sort(key=lambda p: p[0])
     return plan

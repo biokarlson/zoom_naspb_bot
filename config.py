@@ -4,7 +4,24 @@ from zoneinfo import ZoneInfo
 # --- Константы (не секреты) ---
 VERSION = "1.1"
 
-ADMIN_IDS: list[int] = [123456789]          # впишите Telegram ID админов
+def _parse_ids(raw: str) -> list[int]:
+    ids: list[int] = []
+    for part in raw.replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.append(int(part))
+        except ValueError:
+            raise RuntimeError(f"ADMIN_IDS: «{part}» не похоже на Telegram ID (ожидаются числа через запятую)")
+    return ids
+
+
+# Telegram ID админов: переменная окружения ADMIN_IDS (через запятую), например 123456789,987654321.
+# Она не перезаписывается при деплое. Запасной список ниже используется, только если переменная не задана.
+_FALLBACK_ADMIN_IDS = [123456789]
+ADMIN_IDS: list[int] = _parse_ids(os.getenv("ADMIN_IDS", "")) or _FALLBACK_ADMIN_IDS
+ADMIN_IDS_FROM_ENV = bool(_parse_ids(os.getenv("ADMIN_IDS", "")))
 TZ = ZoneInfo("Europe/Moscow")
 HORIZON_MONTHS = 6                          # горизонт проверки занятости серий
 MAX_PENDING_PER_USER = 2

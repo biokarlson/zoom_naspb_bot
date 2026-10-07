@@ -20,6 +20,9 @@ from web.oauth import create_app
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     logging.getLogger(__name__).info("Zoom bot v%s", config.VERSION)
+    if not config.ADMIN_IDS_FROM_ENV:
+        logging.getLogger(__name__).warning(
+            "ADMIN_IDS не задан в переменных окружения: используется список из config.py %s", config.ADMIN_IDS)
     await repo.init_db()
     await links.refresh_cache()
     bot = Bot(config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))

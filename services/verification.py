@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import config
 from services.caldav_client import CalendarUnavailable
-from services.recurrence import Rule, expand
+from services.recurrence import LAST, Rule, expand, has_overlapping_weeks, weeks_of_date
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +37,12 @@ async def verify_series(cal, uids: list[str], first_start: datetime, rule: Rule,
     now = now or datetime.now(timezone.utc)
     expected = sorted(s.astimezone(timezone.utc)
                       for s in expand(first_start, rule, now, VERIFY_HORIZON_MONTHS))
+    base = list(expected)   # допустим и вариант без дубля (если сервер сам схлопнет одинаковые занятия)
+    if has_overlapping_weeks(rule):
+        # «4-я» и «последняя» — разные события: в месяцах, где они совпадают, занятие в календаре дважды
+        both = {4, LAST}
+        expected += [s for s in expected if both <= weeks_of_date(s.astimezone(config.TZ).date())]
+        expected.sort()
     start, end = expected[0] - timedelta(days=1), expected[-1] + timedelta(days=1)
 
     mismatch: list[datetime] | None = None
@@ -49,7 +55,7 @@ async def verify_series(cal, uids: list[str], first_start: datetime, rule: Rule,
         except CalendarUnavailable as e:
             last_error = e
             continue
-        if got == expected:
+        if got == expected or got == base:
             return VerifyResult()
         mismatch = got
 

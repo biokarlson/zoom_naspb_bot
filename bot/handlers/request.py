@@ -16,7 +16,7 @@ from db import repo
 from db.models import Link, Meeting, Status
 from services.availability import decide_link
 from services.caldav_client import CalendarUnavailable, load_client
-from services.recurrence import Rule, describe, matches
+from services.recurrence import OVERLAP_WEEKS_NOTE, Rule, describe, has_overlapping_weeks, matches
 from services.zoom import ZoomClient
 
 log = logging.getLogger(__name__)
@@ -236,6 +236,8 @@ async def _check_and_confirm(msg: Message, state: FSMContext, user_id: int):
         f"Продолжительность: {views.dur_text(dur_min)}",
         f"Повтор: {describe(rule) if rule else 'нет'}",
     ]
+    if rule and has_overlapping_weeks(rule):
+        summary.append("\nℹ️ " + OVERLAP_WEEKS_NOTE)
     if overlap:
         what = "для всей серии" if rule else "для вашей встречи"
         summary.append(
