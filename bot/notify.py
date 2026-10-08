@@ -33,25 +33,39 @@ async def send_admin_cards(bot: Bot, m: Meeting) -> list[dict]:
     return refs
 
 
-async def send_cancel_request(bot: Bot, m: Meeting) -> int:
+async def send_cancel_request(bot: Bot, m: Meeting) -> list[dict]:
+    """Запрос на отмену — всем админам. Возвращает ссылки на сообщения, чтобы потом обновить их все."""
     text = views.card_text(m, _now(), admin=True, head="🛑 Запрос на отмену встречи")
-    sent = 0
+    refs = []
     for admin_id in config.ADMIN_IDS:
         try:
-            await bot.send_message(admin_id, text, reply_markup=kb.cancel_request_kb(m.id))
-            sent += 1
+            msg = await bot.send_message(admin_id, text, reply_markup=kb.cancel_request_kb(m.id))
+            refs.append({"chat_id": admin_id, "message_id": msg.message_id})
         except (TelegramForbiddenError, TelegramBadRequest):
             log.warning("Не удалось отправить запрос отмены админу %s", admin_id)
-    return sent
+    return refs
 
 
-async def refresh_admin_messages(bot: Bot, m: Meeting, suffix: str) -> None:
-    """Убирает кнопки и дописывает итог в сообщения админов о заявке."""
-    text = views.card_text(m, _now(), admin=True, head="📝 Заявка", suffix=suffix)
+async def refresh_admin_messages(bot: Bot, m: Meeting, suffix: str, head: str = "📝 Заявка") -> None:
+    """Убирает кнопки и дописывает итог в сообщения админов (заявка или запрос на отмену)."""
+    text = views.card_text(m, _now(), admin=True, head=head, suffix=suffix)
     for ref in m.admin_msgs or []:
         try:
             await bot.edit_message_text(
                 text, chat_id=ref["chat_id"], message_id=ref["message_id"], reply_markup=None)
+        except TelegramBadRequest:
+            pass
+
+
+async def finish_admin(bot: Bot, cb, m: Meeting, suffix: str, head: str = "📝 Заявка") -> None:
+    """Итог у всех админов; если кнопку нажали в карточке списка, обновляем и её."""
+    await refresh_admin_messages(bot, m, suffix, head=head)
+    refs = {(r["chat_id"], r["message_id"]) for r in (m.admin_msgs or [])}
+    msg = cb.message
+    if (msg.chat.id, msg.message_id) not in refs:
+        try:
+            await msg.edit_text(
+                views.card_text(m, _now(), admin=True, head=head, suffix=suffix), reply_markup=None)
         except TelegramBadRequest:
             pass
 

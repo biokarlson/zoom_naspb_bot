@@ -97,8 +97,10 @@ async def request_cancel(cb: CallbackQuery, callback_data: Card, bot: Bot):
         await cb.answer("Состояние встречи изменилось", show_alert=True)
         return
     await cb.answer("Запрос отправлен")
-    sent = await notify.send_cancel_request(bot, m)
-    note = "Запрос на отмену отправлен админу." if sent else \
+    refs = await notify.send_cancel_request(bot, m)
+    async with repo.Session() as s:
+        await repo.set_admin_msgs(s, m.id, refs)   # чтобы обновить сообщение у всех админов после решения
+    note = "Запрос на отмену отправлен админу." if refs else \
         "Запрос сохранён, но доставить его админу не удалось. Свяжитесь с админом напрямую."
     await views.edit_or_send(cb, note)
 
@@ -125,13 +127,16 @@ async def cancel_no(cb: CallbackQuery, callback_data: Card):
 
 
 async def _do_cancel(cb: CallbackQuery, meeting_id: int, bot: Bot, zoom: ZoomClient,
-                     *, author_text: str, admin_suffix: str) -> None:
+                     *, author_text: str, admin_suffix: str, update_all: bool = False) -> None:
     await views.safe_answer(cb, "Отменяю…")
     res = await cancel_meeting(zoom, meeting_id)
     if res.ok:
         m = res.meeting
-        await views.edit_or_send(
-            cb, views.card_text(m, _now(), admin=True, suffix=admin_suffix))
+        if update_all:   # запрос на отмену: итог во всех сообщениях админов
+            await notify.finish_admin(bot, cb, m, admin_suffix, head="🛑 Запрос на отмену")
+        else:
+            await views.edit_or_send(
+                cb, views.card_text(m, _now(), admin=True, suffix=admin_suffix))
         await notify.notify_author(bot, m.author_tg_id, author_text.format(title=views.esc(m.title)))
     elif res.already_processed:
         await cb.message.answer("Встреча уже отменена или недоступна для отмены")
@@ -154,7 +159,7 @@ async def cr_ok(cb: CallbackQuery, callback_data: Card, bot: Bot, zoom: ZoomClie
         return
     await _do_cancel(cb, callback_data.id, bot, zoom,
                      author_text="Отмена одобрена: встреча «{title}» отменена.",
-                     admin_suffix="🚫 Отмена одобрена")
+                     admin_suffix="🚫 Отмена одобрена", update_all=True)
 
 
 @router.callback_query(Card.filter(F.a == "cr_no"))
@@ -168,8 +173,8 @@ async def cr_no(cb: CallbackQuery, callback_data: Card, bot: Bot):
         await cb.answer("Запрос уже обработан", show_alert=True)
         return
     await cb.answer("Отклонено")
-    await views.edit_or_send(
-        cb, views.card_text(m, _now(), admin=True, suffix="Отмена отклонена, встреча остаётся в силе"))
+    await notify.finish_admin(bot, cb, m, "Отмена отклонена, встреча остаётся в силе",
+                              head="🛑 Запрос на отмену")
     await notify.notify_author(
         bot, m.author_tg_id,
         f"Отмена отклонена, встреча «{views.esc(m.title)}» остаётся в силе.")

@@ -16,6 +16,7 @@ from db import repo
 from db.models import Link, Meeting, Status
 from services.availability import decide_link
 from services.caldav_client import CalendarUnavailable, load_client
+from services.dateparse import parse_date, parse_time
 from services.recurrence import OVERLAP_WEEKS_NOTE, Rule, describe, has_overlapping_weeks, matches
 from services.zoom import ZoomClient
 
@@ -88,30 +89,28 @@ async def got_committee(message: Message, state: FSMContext):
         return
     await state.update_data(committee=committee)
     await state.set_state(RequestFSM.date)
-    await message.answer("Дата встречи (ДД.ММ.ГГГГ), например 13.10.2026:")
+    await message.answer("Дата встречи, например 13.10.2026, 13.10, сегодня, завтра:")
 
 
 @router.message(RequestFSM.date, F.text)
 async def got_date(message: Message, state: FSMContext):
-    try:
-        d = datetime.strptime(message.text.strip(), "%d.%m.%Y").date()
-    except ValueError:
-        await message.answer("Не понял дату. Формат: ДД.ММ.ГГГГ, например 13.10.2026.")
+    d = parse_date(message.text, datetime.now(config.TZ).date())
+    if d is None:
+        await message.answer("Не понял дату. Примеры: 13.10.2026, 13.10, завтра.")
         return
     if d < datetime.now(config.TZ).date():
         await message.answer("Эта дата уже прошла. Введите будущую дату.")
         return
     await state.update_data(date=d.isoformat())
     await state.set_state(RequestFSM.time)
-    await message.answer("Время начала по Москве (ЧЧ:ММ), например 19:00:")
+    await message.answer("Время начала по Москве, например 19:00, 19.00, 1900 или 19:")
 
 
 @router.message(RequestFSM.time, F.text)
 async def got_time(message: Message, state: FSMContext):
-    try:
-        t = datetime.strptime(message.text.strip(), "%H:%M")
-    except ValueError:
-        await message.answer("Не понял время. Формат: ЧЧ:ММ, например 19:00.")
+    t = parse_time(message.text)
+    if t is None:
+        await message.answer("Не понял время. Примеры: 19:00, 19.00, 1900, 19.")
         return
     data = await state.get_data()
     d = date.fromisoformat(data["date"])
@@ -188,7 +187,7 @@ async def _after_weeks(msg: Message, state: FSMContext, user_id: int):
         await state.set_state(RequestFSM.date)
         await msg.answer(
             f"Дата {start:%d.%m.%Y} ({WEEKDAYS[start.weekday()]}) не подходит под правило "
-            f"«{describe(rule)}». Введите другую дату (ДД.ММ.ГГГГ).")
+            f"«{describe(rule)}». Введите другую дату (например, 13.10.2026 или завтра).")
         return
     await _check_and_confirm(msg, state, user_id)
 
@@ -258,7 +257,7 @@ async def on_conflict(cb: CallbackQuery, callback_data: Flow, state: FSMContext,
         pass
     if callback_data.v == "date":
         await state.set_state(RequestFSM.date)
-        await cb.message.answer("Введите другую дату (ДД.ММ.ГГГГ):")
+        await cb.message.answer("Введите другую дату (например, 13.10.2026 или завтра):")
         return
     data = await state.get_data()
     text = (f"✉️ {views.user_link(cb.from_user)} не смог записаться на {data.get('date')} "
