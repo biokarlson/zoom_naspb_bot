@@ -6,7 +6,9 @@ from __future__ import annotations
 from db import repo
 from services import templating
 
-_cache = {"join": "", "short": ""}
+_cache = {"join": "", "short": "", "calendar": ""}
+
+CALENDAR_KEY = "calendar_url"   # ссылка на календарь для пользователей
 
 
 async def load_custom() -> tuple[str, str]:
@@ -18,6 +20,13 @@ async def load_custom() -> tuple[str, str]:
 
 async def refresh_cache() -> None:
     _cache["join"], _cache["short"] = await load_custom()
+    async with repo.Session() as s:
+        _cache["calendar"] = await repo.get_setting(s, CALENDAR_KEY)
+
+
+def calendar_url() -> str:
+    """Ссылка на календарь для кнопки «📅 Календарь» (пусто — кнопки нет)."""
+    return _cache["calendar"]
 
 
 def display_link(m) -> str:

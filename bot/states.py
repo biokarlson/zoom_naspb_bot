@@ -19,3 +19,8 @@ class AdminFSM(StatesGroup):
     template = State()
     extra = State()
     link_value = State()
+    calendar_value = State()
+
+
+class CheckFSM(StatesGroup):
+    date = State()

@@ -10,7 +10,7 @@ from aiogram.types import BotCommand
 from aiohttp import web
 
 import config
-from bot.handlers import admin_settings, meetings, request, review, start
+from bot.handlers import admin_settings, check, meetings, request, review, start
 from db import repo
 from services import links
 from services.zoom import ZoomClient
@@ -32,12 +32,13 @@ async def main() -> None:
             BotCommand(command="start", description="Главное меню"),
             BotCommand(command="request", description="Подать заявку"),
             BotCommand(command="my", description="Мои встречи"),
+            BotCommand(command="check", description="Проверить дату"),
             BotCommand(command="cancel", description="Отменить действие"),
         ])
     except Exception:
         logging.getLogger(__name__).exception("Не удалось задать меню команд")
     # admin_settings первым: его фильтры пропускают только админов
-    for r in (start.router, admin_settings.router, request.router, review.router, meetings.router):
+    for r in (start.router, admin_settings.router, check.router, request.router, review.router, meetings.router):
         dp.include_router(r)
 
     async with aiohttp.ClientSession() as http:

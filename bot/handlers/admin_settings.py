@@ -284,3 +284,50 @@ async def link_clear(cb: CallbackQuery, callback_data: Adm):
     await cb.message.answer(
         f"Ссылка для {{{callback_data.v}}} очищена. Если не задана ни одна ссылка, "
         "подставляется ссылка из Zoom.", parse_mode=None)
+
+
+# ------------------------------------------------------------------ ссылка на календарь для пользователей
+
+@router.callback_query(Adm.filter(F.a == "cal_url"))
+async def cal_url_show(cb: CallbackQuery):
+    await cb.answer()
+    url = await _current(links.CALENDAR_KEY)
+    b = InlineKeyboardBuilder()
+    b.button(text="Изменить", callback_data=Adm(a="cal_url_edit"))
+    b.button(text="Очистить", callback_data=Adm(a="cal_url_clear"))
+    b.adjust(2)
+    await cb.message.answer(
+        "Ссылка на календарь (пользователям показывается кнопкой «📅 Календарь» в главном меню):\n\n"
+        + (url or "не задана — кнопки «Календарь» нет")
+        + "\n\nПроверьте настройки доступа календаря: какие подробности событий видят те, у кого есть ссылка.",
+        reply_markup=b.as_markup(), parse_mode=None)
+
+
+@router.callback_query(Adm.filter(F.a == "cal_url_edit"))
+async def cal_url_edit(cb: CallbackQuery, state: FSMContext):
+    await cb.answer()
+    await state.set_state(AdminFSM.calendar_value)
+    await cb.message.answer("Пришлите ссылку на календарь (начинается с https://). /cancel — отмена.")
+
+
+@router.message(AdminFSM.calendar_value, F.text)
+async def cal_url_save(message: Message, state: FSMContext):
+    url = message.text.strip()
+    if not url.startswith("https://") or len(url) > 500 or any(ch.isspace() for ch in url):
+        await message.answer("Нужна ссылка вида https://... без пробелов (до 500 символов). "
+                             "Пришлите снова или /cancel.", parse_mode=None)
+        return
+    async with repo.Session() as s:
+        await repo.set_setting(s, links.CALENDAR_KEY, url)
+    await links.refresh_cache()
+    await state.clear()
+    await message.answer("Ссылка на календарь сохранена ✅ Кнопка «📅 Календарь» появится в главном меню.")
+
+
+@router.callback_query(Adm.filter(F.a == "cal_url_clear"))
+async def cal_url_clear(cb: CallbackQuery):
+    await cb.answer()
+    async with repo.Session() as s:
+        await repo.set_setting(s, links.CALENDAR_KEY, "")
+    await links.refresh_cache()
+    await cb.message.answer("Ссылка на календарь очищена, кнопка «Календарь» скрыта.")

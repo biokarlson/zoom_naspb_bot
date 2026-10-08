@@ -4,6 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.callbacks import Adm, Card, Flow, Menu, Pg, Rev
 from db.models import Meeting, Status
+from services import links
 
 
 MENU_BUTTON_TEXT = "🏠 Главное меню"
@@ -30,6 +31,9 @@ def main_menu() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="📝 Заявка", callback_data=Menu(a="request"))
     b.button(text="⚙️ Управление", callback_data=Menu(a="manage"))
+    b.button(text="🔍 Проверить дату", callback_data=Menu(a="check"))
+    if links.calendar_url():
+        b.button(text="📅 Календарь", url=links.calendar_url())
     b.adjust(2)
     return b.as_markup()
 
@@ -41,8 +45,9 @@ def admin_menu() -> InlineKeyboardMarkup:
     b.button(text="Шаблон сообщения", callback_data=Adm(a="template"))
     b.button(text="Дополнительный текст", callback_data=Adm(a="extra"))
     b.button(text="Ссылки в инструкции", callback_data=Adm(a="links"))
+    b.button(text="Ссылка на календарь", callback_data=Adm(a="cal_url"))
     b.button(text="📋 Все встречи", callback_data=Pg(scope="all", n=0))
-    b.adjust(2, 2, 2)
+    b.adjust(2, 2, 2, 1)
     return b.as_markup()
 
 
